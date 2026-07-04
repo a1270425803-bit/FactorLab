@@ -1,0 +1,58 @@
+{
+  "factors": [
+    {
+      "factor_id": "f003",
+      "round": 3,
+      "inbound_date": "2026-06-13",
+      "code_snapshot": "def compute_factor(df):\n    # 计算收益率\n    ret = df['close'].pct_change()\n    # 计算振幅\n    amp = (df['high'] - df['low']) / df['open']\n    # 计算成交量变化率\n    vol_ratio = df['volume'] / df['volume'].groupby(level='code').shift(1)\n    # 计算日内价格范围与收盘价的关系\n    price_range = (df['high'] - df['low']) / df['close']\n    # 构建因子：过去5天收益率与振幅的比值，衡量价格效率\n    factor = ret.rolling(5).sum() / amp.rolling(5).mean().replace(0, 1e-10)\n    # 用成交量变化率和价格范围调整\n    factor = factor * (vol_ratio.rolling(5).mean() / price_range.rolling(5).mean().replace(0, 1e-10))\n    # 去极值\n    factor = factor.clip(-5, 5)\n    # 返回结果\n    return factor",
+      "natural_summary": "这个因子衡量的是**股价上涨的“效率”与成交活跃度的综合表现**。计算方法是：先用过去5天的累计涨幅除以平均振幅（比值越大说明上涨越顺畅），再乘以过去5天平均成交量变化率与平均日内价格范围的比值（比值越大说明放量上涨且波动稳定），最后对极端值进行限制，避免异常数据干扰。",
+      "metrics": {
+        "ic": 0.037168,
+        "ir": 0.208534,
+        "coverage": 0.702034,
+        "correlation": 0.02173,
+        "turnover": 0.004744,
+        "directional_accuracy": 0.488401,
+        "rank_autocorr_5d": 0.886397,
+        "ic_decay_ratio": 1.0
+      },
+      "score_total": 1.606163
+    },
+    {
+      "factor_id": "f004",
+      "round": 4,
+      "inbound_date": "2026-06-13",
+      "code_snapshot": "def compute_factor(df):\n    # 计算日内涨跌幅（收盘相对开盘）\n    intraday_ret = (df['close'] - df['open']) / df['open']\n    \n    # 计算日内振幅\n    amplitude = (df['high'] - df['low']) / df['open']\n    \n    # 计算成交量相对过去5日均值的倍数\n    avg_vol_5 = df.groupby(level='code')['volume'].transform(lambda x: x.rolling(5, min_periods=3).mean())\n    vol_ratio = df['volume'] / avg_vol_5\n    \n    # 构建核心信号：动量强度 * 振幅 * 成交量放大\n    raw_signal = intraday_ret * amplitude * vol_ratio\n    \n    # 计算过去5日信号均值（平滑噪声）\n    smoothed = df.groupby(level='code')['close'].transform(lambda x: x.rolling(5, min_periods=3).mean())\n    \n    # 最终因子 = 原始信号与平滑信号的差值（捕捉突变）\n    factor = raw_signal - smoothed\n    \n    # 截面标准化（Z-score）\n    factor = (factor - factor.groupby(level='date').transform('mean')) / factor.groupby(level='date').transform('std')\n    \n    return factor",
+      "natural_summary": "这个因子衡量的是**个股在日内出现“强动量、大振幅、高成交”突发异动时，是否被市场后续过度平滑而存在短期反转机会**。计算方法：先计算日内涨跌幅、振幅和成交量相对过去5日均值的倍数，三者相乘得到原始信号；再减去过去5日信号均值得到差值（捕捉突变），最后对全市场做标准化处理。",
+      "metrics": {
+        "ic": 0.132678,
+        "ir": 0.180211,
+        "coverage": 0.701065,
+        "correlation": 0.154717,
+        "turnover": 0.002834,
+        "directional_accuracy": 0.489524,
+        "rank_autocorr_5d": 0.997839,
+        "ic_decay_ratio": 1.0
+      },
+      "score_total": 2.308151
+    },
+    {
+      "factor_id": "f002",
+      "round": 19,
+      "inbound_date": "2026-06-13",
+      "code_snapshot": "def compute_factor(df: pd.DataFrame) -> pd.Series:\n    # 计算日内特征\n    ret = df['close'] / df['open'] - 1\n    amp = (df['high'] - df['low']) / df['open']\n    vol_ratio = df['volume'] / df.groupby(level='code')['volume'].transform(lambda x: x.rolling(20).mean())\n    \n    # 短期信号：日内动量 × 振幅 × 成交量倍数\n    signal = ret * amp * vol_ratio\n    \n    # 去除短期趋势：减去自身5日均值\n    signal_detrend = signal - signal.groupby(level='code').transform(lambda x: x.rolling(5).mean())\n    \n    # 价格相对长期均线的偏离度\n    ma60 = df.groupby(level='code')['close'].transform(lambda x: x.rolling(60).mean())\n    price_dev = df['close'] / ma60 - 1\n    \n    # 组合信号：突变信号 × 趋势偏离度，取绝对值负值\n    combined = signal_detrend * price_dev\n    factor = -combined.abs()\n    \n    # 每日截面标准化\n    factor = factor.groupby(level='date').transform(lambda x: (x - x.mean()) / x.std())\n    \n    return factor",
+      "natural_summary": "这个因子衡量的是**股票在短期价格突变与长期趋势偏离共同作用下的反转潜力**。计算方法：先通过日内涨幅、振幅和成交量倍数构造短期突变信号，并去除其5日均线以剔除趋势影响；再计算股价相对60日均线的偏离度；将两者相乘后取绝对值的负值，最终进行每日截面标准化。因子值越低（负值越小），表示短期突变与长期趋势背离越显著，未来反转概率越高。",
+      "metrics": {
+        "ic": 0.113757,
+        "ir": 0.222457,
+        "coverage": 0.687702,
+        "correlation": 0.176728,
+        "turnover": 0.17884,
+        "directional_accuracy": 0.493145,
+        "rank_autocorr_5d": 0.388123,
+        "ic_decay_ratio": 0.504625
+      },
+      "score_total": 1.77151
+    }
+  ]
+}
